@@ -102,6 +102,49 @@ def foct(u, v):
     return (r * math.cos(theta), r * math.sin(theta), z)
 
 
+def king(u, v):
+    """King game piece: a surface-of-revolution body with a flat foot, an
+    8-lobed crown (radius modulated by angle), and an orb finial.
+
+    Demonstrates modulating radius by *both* height (the silhouette) and angle
+    (the crown lobes). Flat foot + folded tip -> *Cylinder* stitching.
+    """
+    # Silhouette: (height v, radius). Linearly interpolated.
+    prof = [(0.00, 0.00), (0.04, 0.85), (0.11, 0.80), (0.17, 0.34),
+            (0.32, 0.40), (0.55, 0.50), (0.63, 0.48), (0.66, 0.74),
+            (0.70, 0.58), (0.72, 0.56), (0.88, 0.56), (0.90, 0.30),
+            (0.935, 0.36), (0.965, 0.16), (1.00, 0.00)]
+
+    def silhouette(t):
+        if t <= prof[0][0]:
+            return prof[0][1]
+        for (va, ra), (vb, rb) in zip(prof, prof[1:]):
+            if t <= vb:
+                return ra + (rb - ra) * (t - va) / (vb - va)
+        return prof[-1][1]
+
+    def smoothstep(a, b, x):
+        t = max(0.0, min(1.0, (x - a) / (b - a)))
+        return t * t * (3.0 - 2.0 * t)
+
+    theta = u * 2.0 * math.pi
+    scale = 1.15                               # fill more of the [-1,1] box
+
+    # 8 crown lobes, faded in only across the crown band.
+    band = smoothstep(0.68, 0.72, v) * (1.0 - smoothstep(0.88, 0.91, v))
+    lobes = (math.cos(8.0 * theta) * 0.5 + 0.5) ** 0.7
+    crown = 1.0 + 0.42 * band * lobes
+
+    cap = 0.04                                 # flat underside of the foot
+    if v < cap:
+        z, r = -1.0, silhouette(cap) * (v / cap)
+    else:
+        z = -1.0 + 2.0 * (v - cap) / (1.0 - cap)
+        r = silhouette(v)
+    r *= scale * crown
+    return (r * math.cos(theta), r * math.sin(theta), z)
+
+
 def vase(u, v):
     """A surface of revolution: spin a profile curve around the Z axis.
 
@@ -132,6 +175,7 @@ SHAPES = {
     "plane":    {"fn": plane,    "stitch": "Plane",    "seam": "dup"},
     "vase":     {"fn": vase,     "stitch": "Sphere",   "seam": "dup"},
     "foct":     {"fn": foct,     "stitch": "Cylinder", "seam": "wrap"},
+    "king":     {"fn": king,     "stitch": "Cylinder", "seam": "wrap"},
 }
 
 
