@@ -74,6 +74,34 @@ def plane(u, v):
     return (2.0 * u - 1.0, 2.0 * v - 1.0, 0.0)
 
 
+def foct(u, v):
+    """Fully-Mirrored Octagon game piece: a capped octagonal prism.
+
+    Cross-section is a regular octagon oriented so a flat face points at each of
+    the 8 compass directions (N, NE, E, ...) — matching the game's 8 facings.
+    The top and bottom rows fold inward to form flat octagonal caps, so the
+    surface is closed under *Cylinder* stitching. Fills the [-1,1] box; scale
+    Z in-world to taste.
+    """
+    cap = 0.20                                 # fraction of height for each cap
+    n = 8
+    phi = math.pi / n                          # 22.5 deg: face toward each dir
+    apothem = 1.0                              # face distance -> touches +/-1
+
+    theta = u * 2.0 * math.pi
+    alpha = ((theta - phi) % (2.0 * math.pi / n)) - math.pi / n
+    r_oct = apothem / math.cos(alpha)          # exact octagon boundary radius
+
+    if v < cap:                                # bottom cap: flat disk at z=-1
+        z, r = -1.0, r_oct * (v / cap)
+    elif v > 1.0 - cap:                        # top cap: flat disk at z=+1
+        z, r = 1.0, r_oct * ((1.0 - v) / cap)
+    else:                                      # side wall: full radius
+        z = (v - cap) / (1.0 - 2.0 * cap) * 2.0 - 1.0
+        r = r_oct
+    return (r * math.cos(theta), r * math.sin(theta), z)
+
+
 def vase(u, v):
     """A surface of revolution: spin a profile curve around the Z axis.
 
@@ -92,8 +120,19 @@ def vase(u, v):
     return (r * math.cos(theta), r * math.sin(theta), 2.0 * v - 1.0)
 
 
-SHAPES = {"sphere": sphere, "torus": torus, "cylinder": cylinder,
-          "plane": plane, "vase": vase}
+# Each shape records its SL Stitching Type and how the U seam closes:
+#   "dup"  - first and last columns coincide (seam meridian doubled)
+#   "wrap" - columns span the full loop (col W-1 connects back to col 0);
+#            needed when vertices must land exactly on features (e.g. octagon
+#            corners) for crisp edges.
+SHAPES = {
+    "sphere":   {"fn": sphere,   "stitch": "Sphere",   "seam": "dup"},
+    "torus":    {"fn": torus,    "stitch": "Torus",    "seam": "dup"},
+    "cylinder": {"fn": cylinder, "stitch": "Cylinder", "seam": "dup"},
+    "plane":    {"fn": plane,    "stitch": "Plane",    "seam": "dup"},
+    "vase":     {"fn": vase,     "stitch": "Sphere",   "seam": "dup"},
+    "foct":     {"fn": foct,     "stitch": "Cylinder", "seam": "wrap"},
+}
 
 
 def to_byte(value):
@@ -101,14 +140,16 @@ def to_byte(value):
     return max(0, min(255, int(round((value + 1.0) * 0.5 * 255.0))))
 
 
-def generate(shape_fn, size):
+def generate(shape_fn, size, seam="dup"):
     pixels = bytearray(size * size * 3)
     i = 0
     for row in range(size):
         # Row 0 is the top of the image; V should run bottom(0) -> top(1).
         v = 1.0 - (row / (size - 1))
         for col in range(size):
-            u = col / (size - 1)
+            # "wrap" lets the last column loop back to the first (col/size);
+            # "dup" makes the first/last columns coincide (col/(size-1)).
+            u = col / size if seam == "wrap" else col / (size - 1)
             x, y, z = shape_fn(u, v)
             pixels[i] = to_byte(x)
             pixels[i + 1] = to_byte(y)
@@ -127,9 +168,11 @@ def main(argv):
     if size & (size - 1) != 0:
         print(f"Warning: size {size} is not a power of two; SL prefers 8/16/32/64/128.")
 
-    pixels = generate(SHAPES[shape], size)
+    spec = SHAPES[shape]
+    pixels = generate(spec["fn"], size, spec["seam"])
     write_png(outfile, size, size, pixels)
     print(f"Wrote {outfile}  ({shape}, {size}x{size})")
+    print(f"In SL: set Stitching Type = {spec['stitch']}")
 
 
 if __name__ == "__main__":
