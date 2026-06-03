@@ -46,6 +46,48 @@ def write_png(path, width, height, pixels):
 
 
 # ---------------------------------------------------------------------------
+# Shape helpers
+# ---------------------------------------------------------------------------
+def _smoothstep(a, b, x):
+    if a == b:
+        return 0.0 if x < a else 1.0
+    t = max(0.0, min(1.0, (x - a) / (b - a)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _interp(points, t):
+    """Piecewise-linear lookup over a list of (position, value) control points."""
+    if t <= points[0][0]:
+        return points[0][1]
+    for (pa, va), (pb, vb) in zip(points, points[1:]):
+        if t <= pb:
+            return va + (vb - va) * (t - pa) / (pb - pa)
+    return points[-1][1]
+
+
+def _poly_r(theta, n, phi, apothem):
+    """Radius to a regular n-gon boundary at angle theta (apothem = face dist)."""
+    a = ((theta - phi) % (2.0 * math.pi / n)) - math.pi / n
+    return apothem / math.cos(a)
+
+
+def _ang_dist(theta, center):
+    """Smallest absolute angular distance (radians) between theta and center."""
+    d = (theta - center) % (2.0 * math.pi)
+    return min(d, 2.0 * math.pi - d)
+
+
+def _capped(v, cap):
+    """Flat top+bottom caps over v in [0,1]. Returns (z, k): k folds the rim
+    radius to 0 at the cap centres and is 1 along the side wall."""
+    if v < cap:
+        return -1.0, v / cap
+    if v > 1.0 - cap:
+        return 1.0, (1.0 - v) / cap
+    return (v - cap) / (1.0 - 2.0 * cap) * 2.0 - 1.0, 1.0
+
+
+# ---------------------------------------------------------------------------
 # Shape surface functions: (u, v) in [0,1] -> (x, y, z) in roughly [-1, 1]
 # ---------------------------------------------------------------------------
 def sphere(u, v):
@@ -145,6 +187,96 @@ def king(u, v):
     return (r * math.cos(theta), r * math.sin(theta), z)
 
 
+def laser(u, v):
+    """Laser: flat-capped round body with a barrel pointing at the facing dir."""
+    theta = u * 2.0 * math.pi
+    z, k = _capped(v, 0.10)
+    r = 0.5 * k
+    snout = math.exp(-(_ang_dist(theta, math.pi / 2.0) / 0.30) ** 2)
+    band = _smoothstep(0.40, 0.46, v) * (1.0 - _smoothstep(0.60, 0.66, v))
+    r += 0.45 * snout * band
+    return (r * math.cos(theta), r * math.sin(theta), z)
+
+
+def stunner(u, v):
+    """Stunner: a domed bell with a front emitter nub and a rear shield ridge."""
+    prof = [(0.00, 0.00), (0.05, 0.50), (0.40, 0.50), (0.58, 0.48),
+            (0.74, 0.41), (0.88, 0.28), (0.96, 0.14), (1.00, 0.00)]
+    theta = u * 2.0 * math.pi
+    cap = 0.05
+    if v < cap:
+        z, r = -1.0, _interp(prof, cap) * (v / cap)
+    else:
+        z, r = 2.0 * v - 1.0, _interp(prof, v)
+    nub = math.exp(-(_ang_dist(theta, math.pi / 2.0) / 0.30) ** 2)
+    nband = _smoothstep(0.30, 0.36, v) * (1.0 - _smoothstep(0.50, 0.56, v))
+    r += 0.30 * nub * nband
+    arc = _smoothstep(1.40, 1.18, _ang_dist(theta, 1.5 * math.pi))  # rear 135 deg
+    sband = _smoothstep(0.30, 0.40, v) * (1.0 - _smoothstep(0.75, 0.85, v))
+    r += 0.10 * arc * sband
+    return (r * math.cos(theta), r * math.sin(theta), z)
+
+
+def oneway(u, v):
+    """One-Way Mirror: a thin upright panel, its flat face toward the firing dir."""
+    theta = u * 2.0 * math.pi
+    z, k = _capped(v, 0.08)
+    c, s = math.cos(theta), math.sin(theta)
+    half_x, half_y = 0.90, 0.12          # wide across, thin front-to-back
+    rx = half_x / abs(c) if abs(c) > 1e-6 else 1e9
+    ry = half_y / abs(s) if abs(s) > 1e-6 else 1e9
+    r = min(rx, ry) * k
+    return (r * c, r * s, z)
+
+
+def trimir(u, v):
+    """Triangular Mirror: a triangular prism, one flat face toward the firing dir."""
+    theta = u * 2.0 * math.pi
+    z, k = _capped(v, 0.08)
+    r = _poly_r(theta, 3, math.radians(30.0), 0.5) * k
+    return (r * math.cos(theta), r * math.sin(theta), z)
+
+
+def bomb(u, v):
+    """Bomb: a round body on a small flat base with a short fuse on top."""
+    prof = [(0.00, 0.00), (0.05, 0.45), (0.13, 0.78), (0.30, 0.97),
+            (0.50, 1.00), (0.68, 0.95), (0.80, 0.66), (0.86, 0.18),
+            (0.90, 0.17), (0.97, 0.15), (1.00, 0.00)]
+    theta = u * 2.0 * math.pi
+    cap = 0.05
+    if v < cap:
+        z, r = -1.0, _interp(prof, cap) * (v / cap)
+    else:
+        z, r = 2.0 * v - 1.0, _interp(prof, v)
+    return (r * math.cos(theta), r * math.sin(theta), z)
+
+
+def hypergon(u, v):
+    """Hypergon: a faceted octagonal bipyramid (gem) — points top and bottom."""
+    theta = u * 2.0 * math.pi
+    env = 1.0 - abs(2.0 * v - 1.0)       # 0 at poles, 1 at the equator
+    r = _poly_r(theta, 8, math.pi / 8.0, 1.0) * env
+    return (r * math.cos(theta), r * math.sin(theta), 2.0 * v - 1.0)
+
+
+def splitter(u, v):
+    """Beam Splitter: a square (diamond) prism, a vertical splitting edge to front."""
+    theta = u * 2.0 * math.pi
+    z, k = _capped(v, 0.08)
+    r = _poly_r(theta, 4, math.pi / 2.0, 0.707) * k
+    return (r * math.cos(theta), r * math.sin(theta), z)
+
+
+def poct(u, v):
+    """Partially-Mirrored Octagon: octagonal prism with a thicker 135 deg back shield."""
+    theta = u * 2.0 * math.pi
+    z, k = _capped(v, 0.18)
+    r = _poly_r(theta, 8, math.pi / 8.0, 0.85)
+    arc = _smoothstep(1.40, 1.18, _ang_dist(theta, 1.5 * math.pi))  # 3 back faces
+    r *= (1.0 + 0.14 * arc) * k
+    return (r * math.cos(theta), r * math.sin(theta), z)
+
+
 def vase(u, v):
     """A surface of revolution: spin a profile curve around the Z axis.
 
@@ -176,6 +308,14 @@ SHAPES = {
     "vase":     {"fn": vase,     "stitch": "Sphere",   "seam": "dup"},
     "foct":     {"fn": foct,     "stitch": "Cylinder", "seam": "wrap"},
     "king":     {"fn": king,     "stitch": "Cylinder", "seam": "wrap"},
+    "laser":    {"fn": laser,    "stitch": "Cylinder", "seam": "wrap"},
+    "stunner":  {"fn": stunner,  "stitch": "Cylinder", "seam": "wrap"},
+    "oneway":   {"fn": oneway,   "stitch": "Cylinder", "seam": "wrap"},
+    "trimir":   {"fn": trimir,   "stitch": "Cylinder", "seam": "wrap"},
+    "bomb":     {"fn": bomb,     "stitch": "Cylinder", "seam": "dup"},
+    "hypergon": {"fn": hypergon, "stitch": "Sphere",   "seam": "wrap"},
+    "splitter": {"fn": splitter, "stitch": "Cylinder", "seam": "wrap"},
+    "poct":     {"fn": poct,     "stitch": "Cylinder", "seam": "wrap"},
 }
 
 

@@ -35,11 +35,24 @@ python3 make_sculptmap.py sphere 64    # -> sphere_sculptmap.png (Stitching: Sph
 | `cylinder` | Cylinder | Open-ended tube. |
 | `plane`    | Plane    | Flat sheet. |
 | `vase`     | Sphere   | Surface of revolution with a pinched neck and flared lip. |
-| `foct`     | Cylinder | **Laser-chess** Fully-Mirrored Octagon — capped octagonal prism, a flat face toward each of the 8 facings. |
-| `king`     | Cylinder | **Laser-chess** King — profile body with a flat foot, an 8-lobed crown, and an orb finial. |
 
-The `foct` and `king` shapes are game pieces for the laser-chess project (a copy
-of each map lives in `../laser-chess/sculpties/`).
+### Laser-chess pieces
+
+Game pieces for the laser-chess project; a copy of each map lives in
+`../laser-chess/sculpties/`.
+
+| Shape | Stitching | Piece |
+|-------|-----------|-------|
+| `king`     | Cylinder | King — flat foot, 8-lobed crown, orb finial. |
+| `laser`    | Cylinder | Laser — round body with a directional barrel. |
+| `stunner`  | Cylinder | Stunner — domed bell, front nub, rear shield ridge. |
+| `oneway`   | Cylinder | One-Way Mirror — thin upright panel facing forward. |
+| `trimir`   | Cylinder | Triangular Mirror — triangular prism, flat face forward. |
+| `bomb`     | Cylinder | Bomb — round body, flat base, fuse stem. |
+| `hypergon` | Sphere   | Hypergon — faceted octagonal bipyramid (gem). |
+| `splitter` | Cylinder | Beam Splitter — square "diamond" prism, edge forward. |
+| `poct`     | Cylinder | Partially-Mirrored Octagon — thicker 135° rear shield. |
+| `foct`     | Cylinder | Fully-Mirrored Octagon — flat face toward each of the 8 facings. |
 
 ## Using a sculpt map in Second Life
 
