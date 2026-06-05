@@ -45,14 +45,25 @@ Game pieces for the laser-chess project; a copy of each map lives in
 |-------|-----------|-------|
 | `king`     | Cylinder | King — flat foot, 8-lobed crown, orb finial. |
 | `laser`    | Cylinder | Laser — round body with a directional barrel. |
-| `stunner`  | Cylinder | Stunner — domed bell, front nub, rear shield ridge. |
-| `oneway`   | Cylinder | One-Way Mirror — thin upright panel facing forward. |
-| `trimir`   | Cylinder | Triangular Mirror — triangular prism, flat face forward. |
-| `bomb`     | Cylinder | Bomb — round body, flat base, fuse stem. |
+| `stunner`  | Cylinder | Stunner — octagon, faces `g-v-s-v-s-v-s-v` (gun / vulnerable / shield). |
+| `oneway`   | Cylinder | One-Way Mirror — arrow pointing the pass-through direction. |
+| `trimir`   | Cylinder | Triangular Mirror — right triangle, mirror on the hypotenuse. |
+| `bomb`     | Cylinder | Bomb — round body, 4 blast spikes on the orthogonal (explosion) faces. |
 | `hypergon` | Sphere   | Hypergon — faceted octagonal bipyramid (gem). |
 | `splitter` | Cylinder | Beam Splitter — square "diamond" prism, edge forward. |
 | `poct`     | Cylinder | Partially-Mirrored Octagon — thicker 135° rear shield. |
 | `foct`     | Cylinder | Fully-Mirrored Octagon — flat face toward each of the 8 facings. |
+
+### Control panel buttons
+
+Embossed icon buttons (a round disc with the symbol raised on top), also copied
+to `../laser-chess/sculpties/`.
+
+| Shape | Stitching | Button |
+|-------|-----------|--------|
+| `rotcw`  | Cylinder | Rotate clockwise (circular arrow). |
+| `rotccw` | Cylinder | Rotate counter-clockwise (mirror of `rotcw`). |
+| `fire`   | Cylinder | Fire (target reticle). |
 
 ## Using a sculpt map in Second Life
 

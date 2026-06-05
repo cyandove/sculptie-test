@@ -87,6 +87,90 @@ def _capped(v, cap):
     return (v - cap) / (1.0 - 2.0 * cap) * 2.0 - 1.0, 1.0
 
 
+def _convex_r(theta, verts):
+    """Radius from the origin (which must be inside) to a convex polygon's edge
+    along direction theta. Lets a cross-section be any convex outline."""
+    dx, dy = math.cos(theta), math.sin(theta)
+    best = None
+    n = len(verts)
+    for i in range(n):
+        ax, ay = verts[i]
+        bx, by = verts[(i + 1) % n]
+        ex, ey = bx - ax, by - ay
+        det = ex * dy - ey * dx
+        if abs(det) < 1e-12:
+            continue
+        t = (ex * ay - ey * ax) / det        # distance along the ray
+        s = (dx * ay - dy * ax) / det        # position along the edge [0,1]
+        if t > 1e-9 and -1e-6 <= s <= 1.0 + 1e-6 and (best is None or t < best):
+            best = t
+    return best if best is not None else 0.0
+
+
+def _pt_in_poly(x, y, verts):
+    """Even-odd point-in-polygon test (works for non-convex outlines)."""
+    inside = False
+    n = len(verts)
+    j = n - 1
+    for i in range(n):
+        xi, yi = verts[i]
+        xj, yj = verts[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _button(u, v, emboss):
+    """A round control-panel button: flat bottom, short wall, and a top face
+    with `emboss(x, y) -> 0..1` raised as relief (1 = full icon height)."""
+    theta = u * 2.0 * math.pi
+    c, s = math.cos(theta), math.sin(theta)
+    R, cap_bot, wall_top, base_top, emboss_h = 0.92, 0.12, 0.32, 0.45, 0.55
+    if v < cap_bot:                                   # flat bottom disk
+        rr = R * (v / cap_bot)
+        return (rr * c, rr * s, -1.0)
+    if v < wall_top:                                  # side wall
+        z = -1.0 + (v - cap_bot) / (wall_top - cap_bot) * (base_top + 1.0)
+        return (R * c, R * s, z)
+    frac = (1.0 - v) / (1.0 - wall_top)               # top face: rim -> centre
+    rr = R * frac
+    x, y = rr * c, rr * s
+    return (x, y, base_top + emboss(x, y) * emboss_h)
+
+
+def _rot_arrow(x, y, cw):
+    """Emboss mask for a circular rotation arrow (clockwise if cw, else mirrored
+    to counter-clockwise): an arc band plus an arrowhead at the leading end."""
+    if not cw:
+        x = -x                                        # mirror -> CCW
+    rad = math.hypot(x, y)
+    ang = math.atan2(y, x)
+    if ang < 0.0:
+        ang += 2.0 * math.pi
+    ri, ro = 0.30, 0.52
+    rc = 0.5 * (ri + ro)
+    a0, a1 = math.radians(40.0), math.radians(310.0)
+    in_arc = (ri <= rad <= ro) and (a0 <= ang <= a1)
+    ex, ey = rc * math.cos(a0), rc * math.sin(a0)     # leading end of the arc
+    tx, ty = math.sin(a0), -math.cos(a0)              # clockwise tangent there
+    rx, ry = math.cos(a0), math.sin(a0)               # radial direction
+    head = _pt_in_poly(x, y, [(ex + 0.26 * tx, ey + 0.26 * ty),
+                              (ex + 0.17 * rx, ey + 0.17 * ry),
+                              (ex - 0.17 * rx, ey - 0.17 * ry)])
+    return 1.0 if (in_arc or head) else 0.0
+
+
+def _fire_icon(x, y):
+    """Emboss mask for a fire/target reticle: ring + crosshair arms + centre dot."""
+    rad = math.hypot(x, y)
+    ring = 0.45 <= rad <= 0.62
+    arm = 0.07
+    cross = (abs(x) <= arm or abs(y) <= arm) and rad <= 0.74
+    dot = rad <= 0.12
+    return 1.0 if (ring or cross or dot) else 0.0
+
+
 # ---------------------------------------------------------------------------
 # Shape surface functions: (u, v) in [0,1] -> (x, y, z) in roughly [-1, 1]
 # ---------------------------------------------------------------------------
@@ -199,55 +283,72 @@ def laser(u, v):
 
 
 def stunner(u, v):
-    """Stunner: a domed bell with a front emitter nub and a rear shield ridge."""
-    prof = [(0.00, 0.00), (0.05, 0.50), (0.40, 0.50), (0.58, 0.48),
-            (0.74, 0.41), (0.88, 0.28), (0.96, 0.14), (1.00, 0.00)]
+    """Stunner: an octagonal piece whose 8 faces follow gun / vulnerable /
+    shield = g-v-s-v-s-v-s-v clockwise from the front. The gun face (front) has
+    a protruding barrel, the 3 shield faces are raised mirror plates, and the 4
+    vulnerable faces are recessed so the mirrored faces read clearly."""
     theta = u * 2.0 * math.pi
-    cap = 0.05
-    if v < cap:
-        z, r = -1.0, _interp(prof, cap) * (v / cap)
-    else:
-        z, r = 2.0 * v - 1.0, _interp(prof, v)
-    nub = math.exp(-(_ang_dist(theta, math.pi / 2.0) / 0.30) ** 2)
-    nband = _smoothstep(0.30, 0.36, v) * (1.0 - _smoothstep(0.50, 0.56, v))
-    r += 0.30 * nub * nband
-    arc = _smoothstep(1.40, 1.18, _ang_dist(theta, 1.5 * math.pi))  # rear 135 deg
-    sband = _smoothstep(0.30, 0.40, v) * (1.0 - _smoothstep(0.75, 0.85, v))
-    r += 0.10 * arc * sband
+    z, k = _capped(v, 0.16)
+    r = _poly_r(theta, 8, math.pi / 8.0, 0.60)        # octagon, a face per dir
+    wall = _smoothstep(0.16, 0.24, v) * (1.0 - _smoothstep(0.76, 0.84, v))
+    # gun barrel on the front face (north, +Y)
+    gun = math.exp(-(_ang_dist(theta, math.pi / 2.0) / 0.22) ** 2)
+    gband = _smoothstep(0.40, 0.46, v) * (1.0 - _smoothstep(0.62, 0.68, v))
+    r += 0.38 * gun * gband
+    # raised shield plates on the other 3 cardinals (E, S, W)
+    shield = 0.0
+    for d in (0.0, math.pi, 1.5 * math.pi):
+        shield = max(shield, math.exp(-(_ang_dist(theta, d) / 0.20) ** 2))
+    r += 0.16 * shield * wall
+    # recessed vulnerable faces on the 4 diagonals (NE, SE, SW, NW)
+    vuln = 0.0
+    for d in (0.25, 0.75, 1.25, 1.75):
+        vuln = max(vuln, math.exp(-(_ang_dist(theta, d * math.pi) / 0.18) ** 2))
+    r -= 0.10 * vuln * wall
+    r *= k
     return (r * math.cos(theta), r * math.sin(theta), z)
 
 
 def oneway(u, v):
-    """One-Way Mirror: a thin upright panel, its flat face toward the firing dir."""
+    """One-Way Mirror: an arrow token. The arrow points in the direction a beam
+    PASSES THROUGH (beams travelling with the arrow pass; against it reflect)."""
     theta = u * 2.0 * math.pi
-    z, k = _capped(v, 0.08)
-    c, s = math.cos(theta), math.sin(theta)
-    half_x, half_y = 0.90, 0.12          # wide across, thin front-to-back
-    rx = half_x / abs(c) if abs(c) > 1e-6 else 1e9
-    ry = half_y / abs(s) if abs(s) > 1e-6 else 1e9
-    r = min(rx, ry) * k
-    return (r * c, r * s, z)
+    z, k = _capped(v, 0.10)
+    arrow = [(0.0, 1.0), (-0.85, 0.10), (-0.30, -1.0),   # tip, L shoulder, L tail
+             (0.30, -1.0), (0.85, 0.10)]                 # R tail, R shoulder
+    r = _convex_r(theta, arrow) * k
+    return (r * math.cos(theta), r * math.sin(theta), z)
 
 
 def trimir(u, v):
-    """Triangular Mirror: a triangular prism, one flat face toward the firing dir."""
+    """Triangular Mirror: a right triangle. The reflective face is the hypotenuse
+    (the long front face toward +Y); the right-angle vertex is at the back."""
     theta = u * 2.0 * math.pi
     z, k = _capped(v, 0.08)
-    r = _poly_r(theta, 3, math.radians(30.0), 0.5) * k
+    tri = [(-1.0, 0.55), (1.0, 0.55), (0.0, -0.45)]      # hypotenuse on top (+Y)
+    r = _convex_r(theta, tri) * k
     return (r * math.cos(theta), r * math.sin(theta), z)
 
 
 def bomb(u, v):
-    """Bomb: a round body on a small flat base with a short fuse on top."""
-    prof = [(0.00, 0.00), (0.05, 0.45), (0.13, 0.78), (0.30, 0.97),
-            (0.50, 1.00), (0.68, 0.95), (0.80, 0.66), (0.86, 0.18),
-            (0.90, 0.17), (0.97, 0.15), (1.00, 0.00)]
+    """Bomb: a round body with 4 blast spikes on the orthogonal faces — the
+    explosion sides in the default (orthogonal) config — and smooth diagonals,
+    the vulnerable sides. Rotate the prim 45 deg in-world for the diagonal config
+    so the spikes point at the diagonals instead."""
+    prof = [(0.00, 0.00), (0.05, 0.42), (0.14, 0.54), (0.32, 0.58),
+            (0.50, 0.58), (0.68, 0.55), (0.80, 0.42), (0.86, 0.14),
+            (0.90, 0.13), (0.97, 0.12), (1.00, 0.00)]
     theta = u * 2.0 * math.pi
     cap = 0.05
     if v < cap:
         z, r = -1.0, _interp(prof, cap) * (v / cap)
     else:
         z, r = 2.0 * v - 1.0, _interp(prof, v)
+    spike = 0.0
+    for d in (0.0, 0.5, 1.0, 1.5):                       # N, E, S, W
+        spike = max(spike, math.exp(-(_ang_dist(theta, d * math.pi) / 0.16) ** 2))
+    sband = math.exp(-((v - 0.5) / 0.20) ** 2)           # concentrated at equator
+    r += 0.40 * spike * sband
     return (r * math.cos(theta), r * math.sin(theta), z)
 
 
@@ -275,6 +376,21 @@ def poct(u, v):
     arc = _smoothstep(1.40, 1.18, _ang_dist(theta, 1.5 * math.pi))  # 3 back faces
     r *= (1.0 + 0.14 * arc) * k
     return (r * math.cos(theta), r * math.sin(theta), z)
+
+
+def rotcw(u, v):
+    """Control panel: clockwise rotation button (embossed circular arrow)."""
+    return _button(u, v, lambda x, y: _rot_arrow(x, y, True))
+
+
+def rotccw(u, v):
+    """Control panel: counter-clockwise rotation button (embossed arrow)."""
+    return _button(u, v, lambda x, y: _rot_arrow(x, y, False))
+
+
+def fire(u, v):
+    """Control panel: fire button (embossed target reticle)."""
+    return _button(u, v, _fire_icon)
 
 
 def vase(u, v):
@@ -312,10 +428,13 @@ SHAPES = {
     "stunner":  {"fn": stunner,  "stitch": "Cylinder", "seam": "wrap"},
     "oneway":   {"fn": oneway,   "stitch": "Cylinder", "seam": "wrap"},
     "trimir":   {"fn": trimir,   "stitch": "Cylinder", "seam": "wrap"},
-    "bomb":     {"fn": bomb,     "stitch": "Cylinder", "seam": "dup"},
+    "bomb":     {"fn": bomb,     "stitch": "Cylinder", "seam": "wrap"},
     "hypergon": {"fn": hypergon, "stitch": "Sphere",   "seam": "wrap"},
     "splitter": {"fn": splitter, "stitch": "Cylinder", "seam": "wrap"},
     "poct":     {"fn": poct,     "stitch": "Cylinder", "seam": "wrap"},
+    "rotcw":    {"fn": rotcw,    "stitch": "Cylinder", "seam": "wrap"},
+    "rotccw":   {"fn": rotccw,   "stitch": "Cylinder", "seam": "wrap"},
+    "fire":     {"fn": fire,     "stitch": "Cylinder", "seam": "wrap"},
 }
 
 
